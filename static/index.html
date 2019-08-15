@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <title>Chatroom</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css" integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous">
+    
+    <style>
+        #chat-log {
+            max-height: 500px;
+            height: 500px;
+            overflow-y: scroll;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .chat-message {
+            overflow-y: scroll;            
+        }
+
+        #message-area {
+            bottom: 0px;
+            position: absolute;
+        }
+    </style>
+</head>
+<body>
+    <div class="modal" id="qr-modal">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <h3>Securely share this image with others. Print the code and keep it safe.</h1>
+                <div id="qrcode"></div>
+            </div>
+        </div>
+    </div>
+    <div class="modal" id="qr-scan-modal">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <canvas id="qr-camera"></canvas>
+                </div>
+            </div>
+        </div>
+    <div class="container">
+        <div class="row">
+                <button type="button" id="generate-code" class="btn btn-secondary col-6" data-toggle="modal" data-target="#qr-modal">Generate Secure Room</button>
+                <button type="button" id="scan-code" class="btn btn-secondary col-6" data-toggle="modal" data-target="#qr-scan-modal">Scan To Enter Room</button>
+            </div>
+        <div class="row">
+            <div class="input-group">
+                <div class="input-group-prepend">
+                    <span class="input-group-text">Room Id:</span>
+                </div>
+                <input type="text" id="room-id" class="form-control" placeholder="Room Id">
+            </div>
+        </div>
+        <div class="row">
+            <div class="input-group">
+                <div class="input-group-prepend">
+                    <span class="input-group-text">Key:</span>
+                </div>
+                <input type="text" id="key" class="form-control" placeholder="Key">
+            </div>
+        </div>
+        <div class="row">
+            <button type="button" id="join-room" class="btn btn-secondary col-12">Join Room</button>
+        </div>
+        <div id="chat-log" class="row">
+            <div class="container">
+                <ul id="log" class="list-group">
+                </ul>
+            </div>
+        </div>
+        <div class="row">
+                <div class="input-group col-10">
+                    <div class="input-group-prepend">
+                        <span class="input-group-text">Message:</span>
+                    </div>
+                    <textarea type="text" id="message" class="form-control" placeholder="Message"></textarea>
+                </div>
+                <button type="button" id="send" class="btn btn-secondary col-2">Send</button>
+        </div>
+    </div>
+
+    <!--Load scripts externally and do integrity checking-->
+    <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.3/umd/popper.min.js" integrity="sha384-ZMP7rVo3mIykV+2+9J3UJ46jBk0WLaUAdn689aCwoqbBJiSnjAK/l8WvCWPIPm49" crossorigin="anonymous"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.min.js" integrity="sha384-ChfqqxuZUCnJSK3+MXmPNIyE6ZbWh2IMqE241rYiqJxyMiZ6OW/JmZQ5stwEULTy" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/showdown/1.9.0/showdown.min.js" integrity="sha256-LSUpTY0kkXGKvcBC9kbmgibmx3NVVgJvAEfTZbs51mU=" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/3.1.9-1/crypto-js.min.js" integrity="sha256-u6BamZiW5tCemje2nrteKC2KoLIKX9lKPSpvCkOhamw=" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery.qrcode/1.0/jquery.qrcode.min.js" integrity="sha256-9MzwK2kJKBmsJFdccXoIDDtsbWFh8bjYK/C7UjB1Ay0=" crossorigin="anonymous"></script>
+    <script src="https://cozmo.github.io/jsQR/jsQR.js" integrity="sha256-0/SZSQ0fcKu/9aB/O6qUFHBkU2VQj/AMg3Q4vBkMqbk=" crossorigin="anonymous"></script>
+
+    <script>
+        //Establish Markdown Renderer and Connection to WebSocket
+        var endpoint = "wss://127.0.0.1:8080/chat";
+        var connection = new WebSocket(endpoint);
+        var converter = new showdown.Converter();
+        //Bookkeeping of state
+        var is_validated = false;
+        var id = "";
+
+        //Setup crypto helper functions
+        function generate_secure_hex_string(bytes_num) {
+            var hex_chars = ["0","1","2","3","4","5","6","7","8","9","a","b","c","d","e","f"];
+            var hex_string = "";
+            var bytes = new Uint8Array(bytes_num * 2);
+            window.crypto.getRandomValues(bytes);
+
+            for (var i=0; i<bytes.length; i++) {
+                hex_string += hex_chars[bytes[i] % 16];
+            }
+
+            return hex_string;
+        }
+
+        //Encrypt a message and serialize it into a string to be sent over the socket
+        function generate_encrypted_message(message) {
+            var secret_key_hex = $("#key").val();
+            var secret_key = CryptoJS.enc.Hex.parse(secret_key_hex);
+
+            var iv_hex = generate_secure_hex_string(256 / 8);
+            var iv = CryptoJS.enc.Hex.parse(iv_hex);
+            var iv_base64 = iv.toString(CryptoJS.enc.Base64);
+
+            var encrypted = CryptoJS.AES.encrypt(message, secret_key, { iv: iv });
+            var ciphertext_base64 = encrypted.ciphertext.toString(CryptoJS.enc.Base64);
+
+            //Use encrypt then hash for validation to prevent oracle attack
+            var hmac = CryptoJS.HmacSHA256(secret_key, encrypted.ciphertext);
+            var hmac_base64 = hmac.toString(CryptoJS.enc.Base64);
+
+            return iv_base64 + "|" + ciphertext_base64 + "|" + hmac_base64; 
+        }
+
+        //Decrypts the serialized string made by `generate_encrypted_message`
+        function decrypt_encrypted_message(encrypted_message) {
+            var split = encrypted_message.split("|");
+            if (split.length == 3) {
+                var secret_key_hex = $("#key").val();
+                var secret_key = CryptoJS.enc.Hex.parse(secret_key_hex);
+
+                var iv_base64 = split[0];
+                var iv = CryptoJS.enc.Base64.parse(iv_base64);
+
+                var ciphertext_base64 = split[1];
+                var ciphertext = CryptoJS.enc.Base64.parse(ciphertext_base64);
+
+                var hmac_base64 = split[2];
+                var hmac = CryptoJS.enc.Base64.parse(hmac_base64);
+
+                var hmac_verification = CryptoJS.HmacSHA256(secret_key, ciphertext);
+
+                //Verification works
+                if (hmac_verification.toString(CryptoJS.enc.Base64) == hmac_base64) {
+                    var decrypted = CryptoJS.AES.decrypt({ciphertext : ciphertext}, secret_key, { iv : iv });
+                    return decrypted.toString(CryptoJS.enc.Utf8);
+                } 
+            }
+            //Empty strings should be ignored
+            return "";
+        }
+
+        //Handle getting a message from WebSocket server
+        connection.onmessage = function (e) {
+            console.log(e.data)
+            //First response of the server should be a unique id for the session
+            if (id == "") {
+                id = e.data;
+            } else {
+                var json_data = JSON.parse(e.data);
+                if (json_data.hasOwnProperty("VALIDATED")) {
+                    is_validated = true;
+                }
+                //Server is checking if the client is still alive ... respond back
+                if (json_data.hasOwnProperty("HEARTBEAT")) {
+                    //Ping back same message
+                    connection.send(e.data);
+                }
+                if (json_data.hasOwnProperty("ValidationRequest")) {
+                    //A peer is trying to enter the room and needs validation
+                    validation_request = json_data;
+                    //Extract fields of the validation request
+                    var room = validation_request["ValidationRequest"]["room_id"];
+                    var peer_id = validation_request["ValidationRequest"]["id"];
+                    var validation = validation_request["ValidationRequest"]["validation"];
+
+                    //Room ids should always be the same but in the event they aren't ... reject
+                    if (room == $("#room-id").val()) {
+                        var secret_key = $("#key").val();
+                        var derived_key = CryptoJS.SHA256(secret_key);
+                        var hmac = CryptoJS.HmacSHA256(peer_id, derived_key);
+                        var hmac_hex = hmac.toString(CryptoJS.enc.Hex);
+                        //Connecting peer knows the secret and should be accepted into the room
+                        if (hmac_hex == validation) {
+                            validation_request["ValidationRequest"]["accept"] = true;
+                            connection.send(JSON.stringify(validation_request));
+                        }
+                        
+                    }
+                }
+                //Text message sent
+                if (json_data.hasOwnProperty("id") && json_data.hasOwnProperty("message")) {
+                    var peer_id = json_data["id"];
+                    var message = json_data["message"]
+                    //Don't attempt to decrypt a plaintext server message
+                    if (peer_id == "Server") {
+                        add_chat_message(peer_id + ": " + message);
+                    } else {
+                        add_chat_message(peer_id + ": " + decrypt_encrypted_message(message));
+                    }
+                }
+            }
+        
+
+        };
+
+        //Helper function to generate a room-key pair ... later used for the QR code generation
+        function generate_room_key_pair() {
+            var alphanum = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"];
+            
+            var room_len = 20;
+            var room = "";
+            //Generate AES-256 key ... each hex character is 4 bits ... use numbers generated to access alphanum
+            var key_hex = generate_secure_hex_string(256 / 8);
+
+            //Cryptographically secure rng is not needed
+            for (var i=0; i<room_len; i++) {
+                room += alphanum[Math.floor(Math.random() * Math.floor(alphanum.length))];
+            }
+
+            return {
+                "room": room,
+                "key": key_hex
+            }
+
+        }
+
+        //Prevent XSS injections by stripping user input before rendering
+        function strip(text) {
+            var doc = new DOMParser().parseFromString(text, 'text/html');
+            return doc.body.textContent || "";
+        }
+
+        //Render chat message inside the log
+        function add_chat_message(message) {
+            var new_elem = $('<li class="list-group-item chat-message"></li>');
+            var stripped = strip(message);
+            if (stripped != "") {
+                var markdown_message = converter.makeHtml(stripped);
+                new_elem.html(markdown_message);
+                $("#log").append(new_elem);
+            }
+            scroll_to_bottom();
+        }
+
+        function scroll_to_bottom() {
+            $("#chat-log").scrollTop($("#chat-log")[0].scrollHeight);
+        }
+
+        function send_message() {
+            var message = $("#message").val();
+            if (message.trim() != "") {
+                var message_obj = {"Text":{"message": generate_encrypted_message(message)}}
+
+                connection.send(JSON.stringify(message_obj));
+                $("#message").val("");
+            }
+        }
+
+        //Sending a message can be done in two ways: clicking Send or pressing Ctrl+Enter
+        $("#send").click(send_message);
+        $("#message").on("keypress", function(e) {
+            if (e.ctrlKey && e.which == 13) {
+                send_message();
+            }
+        });
+        $("#join-room").click(function() {
+            //Key used for AES encryption
+            var secret_key = $("#key").val();
+
+            //Check if the key is in the correct format ... 256 bit AES key encoded as hex string
+            //Normalize key, ignore non-hex symbols, check for correct length
+            if (secret_key.toLowerCase().replace(/[^0-9|^a-f]/gi, "").length != (256/4)) {
+                alert("The key should be a 256 bit key encoded as a hex string.");
+                return;
+            }
+
+            //Generate validation string by deriving a key to prevent leaking the actual encryption key
+            //Use HMAC-SHA256 for validation
+            var derived_key = CryptoJS.SHA256(secret_key);
+            var hmac = CryptoJS.HmacSHA256(id, derived_key);
+            var hmac_hex = hmac.toString(CryptoJS.enc.Hex);
+            var register_object = {
+                "Register":{
+                    "room_id": $("#room-id").val(),
+                    "validation": hmac_hex
+                }
+            }
+            //Send registration request to the server
+            connection.send(JSON.stringify(register_object));
+            add_chat_message("Awaiting Validation...");
+        });
+        $("#generate-code").click(function() {
+            $("#qrcode").html("");
+            $("#qrcode").qrcode(JSON.stringify(generate_room_key_pair()));
+        });
+        $("#scan-code").click(function() {
+            //Use cozmo's video renderer from `https://cozmo.github.io/jsQR/`
+            var video = document.createElement("video");
+            var canvasElement = document.getElementById("qr-camera");
+            var canvas = canvasElement.getContext("2d");
+
+            var local_stream;
+            // Use facingMode: environment to attempt to get the front camera on phones
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }).then(function(stream) {
+                //Leak out the stream so that the stream can be ended in the future
+                local_stream = stream;
+                video.srcObject = stream;
+                video.setAttribute("playsinline", true); // required to tell iOS safari we don't want fullscreen
+                video.play();
+                requestAnimationFrame(tick);
+            });
+
+            function tick() {
+                if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                    canvasElement.hidden = false;
+                    canvasElement.height = video.videoHeight;
+                    canvasElement.width = video.videoWidth;
+                    canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
+                    var imageData = canvas.getImageData(0, 0, canvasElement.width, canvasElement.height);
+                    var code = jsQR(imageData.data, imageData.width, imageData.height, {
+                        inversionAttempts: "dontInvert",
+                    });
+                    //Triggers when a qr code is detected
+                    if (code) {
+                        try {
+                            //Parse the qr data as JSON and check if the JSON data is the right format
+                            var data = JSON.parse(code.data);
+                            if (data.hasOwnProperty("room") && data.hasOwnProperty("key")) {
+                                //End video stream and hide modal
+                                local_stream.getVideoTracks()[0].stop();
+                                $("#qr-scan-modal").modal('hide');
+
+                                //Extract info and join
+                                var room = data["room"];
+                                var key = data["key"];
+
+                                //Simulate the user entering the data by hand
+                                $("#key").val(key);
+                                $("#room-id").val(room);
+                                $("#join-room").trigger("click");
+                            } else {
+                                local_stream.getVideoTracks()[0].stop();
+                                $("#qr-scan-modal").modal('hide');
+                                alert("Could not read room-key data.");
+                            }
+                        } catch (e) {
+                            local_stream.getVideoTracks()[0].stop();
+                            $("#qr-scan-modal").modal('hide');
+                            alert("Could not read room-key data.");
+                        }
+                    }
+                }
+                requestAnimationFrame(tick);
+            }
+        });
+    </script>
+</body>
+</html>

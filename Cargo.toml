@@ -1,0 +1,23 @@
+[package]
+name = "end2end-messenger"
+version = "0.1.0"
+authors = ["Ethan Lam <elmemphis2000@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+actix-web = {version = "1.0.5", features = ["ssl"]}
+actix-web-actors = "1.0.2"
+actix = "0.8.3"
+
+serde = "1.0.98"
+serde_json = "1.0.40"
+
+openssl = { version = "0.10", features = ["vendored"] }
+
+hex = "0.3.2"
+
+rand = "0.7.0"
+
+base64 = "0.10.1"
