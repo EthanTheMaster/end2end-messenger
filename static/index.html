@@ -41,16 +41,25 @@
             </div>
         </div>
     <div class="container">
-        <div class="row">
-                <button type="button" id="generate-code" class="btn btn-secondary col-6" data-toggle="modal" data-target="#qr-modal">Generate Secure Room</button>
-                <button type="button" id="scan-code" class="btn btn-secondary col-6" data-toggle="modal" data-target="#qr-scan-modal">Scan To Enter Room</button>
+    <div class="row">
+            <div class="input-group">
+                <div class="input-group-prepend">
+                    <span class="input-group-text">WebSocket Endpoint:</span>
+                </div>
+                <input type="text" id="input-endpoint" class="form-control" placeholder="wss://127.0.0.1:8080/chat">
+                <button type="button" id="connect-endpoint" class="btn btn-secondary">Connect To Endpoint</button>
             </div>
+        </div>
+        <div class="row">
+                <button disabled type="button" id="generate-code" class="btn btn-secondary col-6 disabled-class" data-toggle="modal" data-target="#qr-modal">Generate Secure Room</button>
+                <button disabled type="button" id="scan-code" class="btn btn-secondary col-6 disabled-class" data-toggle="modal" data-target="#qr-scan-modal">Scan To Enter Room</button>
+        </div>
         <div class="row">
             <div class="input-group">
                 <div class="input-group-prepend">
                     <span class="input-group-text">Room Id:</span>
                 </div>
-                <input type="text" id="room-id" class="form-control" placeholder="Room Id">
+                <input disabled type="text" id="room-id" class="form-control disabled-class" placeholder="Room Id">
             </div>
         </div>
         <div class="row">
@@ -58,11 +67,11 @@
                 <div class="input-group-prepend">
                     <span class="input-group-text">Key:</span>
                 </div>
-                <input type="text" id="key" class="form-control" placeholder="Key">
+                <input disabled type="text" id="key" class="form-control disabled-class" placeholder="Key">
             </div>
         </div>
         <div class="row">
-            <button type="button" id="join-room" class="btn btn-secondary col-12">Join Room</button>
+            <button disabled type="button" id="join-room" class="btn btn-secondary col-12 disabled-class">Join Room</button>
         </div>
         <div id="chat-log" class="row">
             <div class="container">
@@ -75,9 +84,9 @@
                     <div class="input-group-prepend">
                         <span class="input-group-text">Message:</span>
                     </div>
-                    <textarea type="text" id="message" class="form-control" placeholder="Message"></textarea>
+                    <textarea disabled type="text" id="message" class="form-control disabled-class" placeholder="Message"></textarea>
                 </div>
-                <button type="button" id="send" class="btn btn-secondary col-2">Send</button>
+                <button disabled type="button" id="send" class="btn btn-secondary col-2 disabled-class">Send</button>
         </div>
     </div>
 
@@ -92,8 +101,9 @@
 
     <script>
         //Establish Markdown Renderer and Connection to WebSocket
-        var endpoint = "wss://127.0.0.1:8080/chat";
-        var connection = new WebSocket(endpoint);
+        var endpoint = "";
+        var connection = null;
+
         var converter = new showdown.Converter();
         //Bookkeeping of state
         var is_validated = false;
@@ -160,8 +170,8 @@
             return "";
         }
 
-        //Handle getting a message from WebSocket server
-        connection.onmessage = function (e) {
+        //Handler for getting a message from WebSocket server
+        function connection_message_handler(e) {
             console.log(e.data)
             //First response of the server should be a unique id for the session
             if (id == "") {
@@ -273,6 +283,33 @@
             if (e.ctrlKey && e.which == 13) {
                 send_message();
             }
+        });
+        //Connect to WebSocket endpoint 
+        $("#connect-endpoint").click(function(e) {
+            //Close current instance before connecting to new endpoint
+            if (connection instanceof WebSocket) {
+                connection.close();
+            }
+            endpoint = $("#input-endpoint").val();
+            connection = new WebSocket(endpoint);
+            connection.onopen = function() {
+                if (connection.readyState == 1) {
+                    alert("Connected!");
+                    //Reset values
+                    is_validated = false;
+                    id = "";
+                    connection.onmessage = connection_message_handler;
+                    $(".disabled-class").prop("disabled", false);
+                }  
+            };
+            connection.onerror = function() {
+                //Handle connection error
+                if (connection.readyState != 1) {
+                    $(".disabled-class").prop("disabled", true);
+                    alert("Failed to connect to endpoint");
+                } 
+            };
+
         });
         $("#join-room").click(function() {
             //Key used for AES encryption
