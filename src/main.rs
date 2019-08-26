@@ -82,14 +82,18 @@ fn main() {
     let sys = System::new("chatserver");
     let chat_server = chatserver::ChatServer::new().start();
 
+    //Configurations
     let endpoint = "127.0.0.1:8080";
+    let ssl_priv_key_path = "./key.pem";
+    let ssl_cert_path = "./cert.pem";
     //Place SSL certs in the project's source directory
-    //Self-sign certificate: `openssl req -x509 -newkey rsa:4096 -nodes -keyout key.pem -out cert.pem -days 365 -subj '/CN=127.0.0.1'`
+    //Self-sign certificate: `openssl req -x509 -newkey rsa:4096 -nodes -keyout key.pem -out cert.pem -days 365 -subj '/CN=ENDPOINT_IP'`
+
     let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls()).unwrap();
     builder
-        .set_private_key_file("./key.pem", SslFiletype::PEM)
+        .set_private_key_file(ssl_priv_key_path, SslFiletype::PEM)
         .unwrap();
-    builder.set_certificate_chain_file("./cert.pem").unwrap();
+    builder.set_certificate_chain_file(ssl_cert_path).unwrap();
 
     println!("Server is running at: https://{}", endpoint);
     HttpServer::new(move || {
