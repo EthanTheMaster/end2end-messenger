@@ -23,6 +23,7 @@ pub struct Message {
     pub id: String,
     pub room_id: String,
     pub message: String,
+    //TODO: Add timestamp
 }
 
 //This message is sent by a client to disconnect from a room or from the server completely

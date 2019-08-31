@@ -185,6 +185,11 @@
                 if (json_data.hasOwnProperty("HEARTBEAT")) {
                     //Ping back same message
                     connection.send(e.data);
+                    //Heartbeat contains the ID ... set the id if current doesn't match
+                    //which may occur if the first message by the server is dropped
+                    if (id != json_data["HEARTBEAT"]) {
+                        id = json_data["HEARTBEAT"]
+                    }
                 }
                 if (json_data.hasOwnProperty("ValidationRequest")) {
                     //A peer is trying to enter the room and needs validation
@@ -334,8 +339,20 @@
                 }
             }
             //Send registration request to the server
+            is_validated = false;
             connection.send(JSON.stringify(register_object));
+            //Clear chat log
+            $("#log").html("");
             add_chat_message("Awaiting Validation...");
+            //Repeatedly ping server until connected
+            var timer = setInterval(function() {
+                if (is_validated) {
+                    clearInterval(timer);
+                } else {
+                    connection.send(JSON.stringify(register_object));
+                    add_chat_message("Awaiting Validation...");
+                }
+            }, 5000);
         });
         $("#generate-code").click(function() {
             $("#qrcode").html("");

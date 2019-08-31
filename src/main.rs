@@ -78,24 +78,31 @@ fn chat(req: HttpRequest, stream: web::Payload, server: web::Data<Addr<ChatServe
     resp
 }
 
+#[derive(Deserialize)]
+struct ServerConfig {
+    ip: String,
+    private_key_path: String,
+    certificate_path: String,
+}
+
 fn main() {
     let sys = System::new("chatserver");
     let chat_server = chatserver::ChatServer::new().start();
 
     //Configurations
-    let endpoint = "127.0.0.1:8080";
-    let ssl_priv_key_path = "./key.pem";
-    let ssl_cert_path = "./cert.pem";
+    let config_file = std::fs::read("./config.json").unwrap();
+    let server_config: ServerConfig = serde_json::from_str(&String::from_utf8(config_file).unwrap()).unwrap();
+
     //Place SSL certs in the project's source directory
     //Self-sign certificate: `openssl req -x509 -newkey rsa:4096 -nodes -keyout key.pem -out cert.pem -days 365 -subj '/CN=ENDPOINT_IP'`
 
     let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls()).unwrap();
     builder
-        .set_private_key_file(ssl_priv_key_path, SslFiletype::PEM)
+        .set_private_key_file(server_config.private_key_path, SslFiletype::PEM)
         .unwrap();
-    builder.set_certificate_chain_file(ssl_cert_path).unwrap();
+    builder.set_certificate_chain_file(server_config.certificate_path).unwrap();
 
-    println!("Server is running at: https://{}", endpoint);
+    println!("Server is running at: https://{}", server_config.ip);
     HttpServer::new(move || {
         App::new()
             //The chat server address should be shared with every connecting client
@@ -104,7 +111,7 @@ fn main() {
             .route("/chat", web::get().to(chat))
             .route("/{path}", web::get().to(get_asset))
     })
-        .bind_ssl(endpoint, builder)
+        .bind_ssl(server_config.ip, builder)
         .unwrap()
         .run()
         .unwrap();

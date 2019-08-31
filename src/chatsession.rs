@@ -95,7 +95,7 @@ impl Actor for ChatSession {
         //Register a heart beat monitor
         ctx.run_interval(HEARTBEAT_INTERVAL, |actor, context| {
             //Ping the client with a heartbeat message
-            context.text(serde_json::to_string(&ClientPacket::HEARTBEAT("Ping".to_string())).unwrap());
+            context.text(serde_json::to_string(&ClientPacket::HEARTBEAT(actor.id.clone())).unwrap());
             if Instant::now().duration_since(actor.last_heartbeat) > CLIENT_TIMEOUT {
                 //No heartbeat ... disconnect the client
                 context.stop();
