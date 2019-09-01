@@ -7,6 +7,19 @@ use std::collections::{HashMap, HashSet};
 use crate::chatsession::ClientState;
 use crate::chatsession::ValidationRequest;
 use crate::chatsession::Text;
+use std::time::SystemTime;
+
+pub fn get_unix_time() -> u64 {
+    let systime = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH);
+    match systime {
+        Ok(d) => {
+            return d.as_secs();
+        },
+        Err(_) => {
+            return 0;
+        },
+    }
+}
 
 //This message should be sent to signify a client connecting to the server
 #[derive(Message)]
@@ -23,7 +36,8 @@ pub struct Message {
     pub id: String,
     pub room_id: String,
     pub message: String,
-    //TODO: Add timestamp
+    //Time is given in terms of seconds since UNIX epoch
+    pub timestamp: u64
 }
 
 //This message is sent by a client to disconnect from a room or from the server completely
@@ -60,14 +74,15 @@ impl ChatServer {
     }
 
     //Broadcasts a message to every client in a room
-    pub fn broadcast_message(&self, room_id: String, id: String, message: String) {
+    pub fn broadcast_message(&self, room_id: String, id: String, message: String, timestamp: u64) {
         match self.rooms.get(&room_id) {
             None => {},
             Some(client_list) => {
                 for client in client_list.iter() {
                     client.do_send(Text {
                         id: id.clone(),
-                        message: message.clone()
+                        message: message.clone(),
+                        timestamp
                     });
                 }
             },
@@ -121,7 +136,8 @@ impl Handler<Register> for ChatServer {
                 println!("User {} has join room {}", registration.id, registration.room_id);
                 self.broadcast_message(registration.room_id.clone(),
                                        "Server".to_string(),
-                                       format!("User {} has join the room ... Number of connected users: {}", registration.id, self.get_user_count(&registration.room_id)));
+                                       format!("User {} has join the room ... Number of connected users: {}", registration.id, self.get_user_count(&registration.room_id)),
+                                        get_unix_time());
             },
             Some(client_list) => {
                 if client_list.is_empty() {
@@ -137,7 +153,8 @@ impl Handler<Register> for ChatServer {
                     println!("User {} has join room {}", registration.id, registration.room_id);
                     self.broadcast_message(registration.room_id.clone(),
                                            "Server".to_string(),
-                                           format!("User {} has join the room ... Number of connected users: {}", registration.id, self.get_user_count(&registration.room_id)));
+                                           format!("User {} has join the room ... Number of connected users: {}", registration.id, self.get_user_count(&registration.room_id)),
+                                           get_unix_time());
 
                 } else {
                     //Send a validation request to every client in the room
@@ -182,7 +199,8 @@ impl Handler<ValidationRequest> for ChatServer {
                             client_list.insert(client.client_addr.clone());
                             self.broadcast_message(msg.room_id.clone(),
                                                    "Server".to_string(),
-                                                   format!("User {} has join the room ... Number of connected users: {}", msg.id, self.get_user_count(&msg.room_id)));
+                                                   format!("User {} has join the room ... Number of connected users: {}", msg.id, self.get_user_count(&msg.room_id)),
+                                                   get_unix_time());
 
                         },
                     }
@@ -196,7 +214,7 @@ impl Handler<Message> for ChatServer {
     type Result = ();
 
     fn handle(&mut self, msg: Message, _: &mut Self::Context) -> Self::Result {
-        self.broadcast_message(msg.room_id, msg.id, msg.message);
+        self.broadcast_message(msg.room_id, msg.id, msg.message, msg.timestamp);
     }
 }
 
@@ -220,7 +238,8 @@ impl Handler<Disconnect> for ChatServer {
                         if let ClientState::VALIDATED(_) = client.state {
                             self.broadcast_message(client.room_id.clone(),
                                                    "Server".to_string(),
-                                                   format!("{} disconnected ... Number of connected users: {}", msg.id, peer_count));
+                                                   format!("{} disconnected ... Number of connected users: {}", msg.id, peer_count),
+                                                   get_unix_time());
                         }
                     },
                 }

@@ -10,12 +10,12 @@
         #chat-log {
             max-height: 500px;
             height: 500px;
-            overflow-y: scroll;
+            overflow-y: auto;
             -webkit-overflow-scrolling: touch;
         }
 
         .chat-message {
-            overflow-y: scroll;            
+            overflow-y: auto;            
         }
 
         #message-area {
@@ -98,7 +98,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/3.1.9-1/crypto-js.min.js" integrity="sha256-u6BamZiW5tCemje2nrteKC2KoLIKX9lKPSpvCkOhamw=" crossorigin="anonymous"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery.qrcode/1.0/jquery.qrcode.min.js" integrity="sha256-9MzwK2kJKBmsJFdccXoIDDtsbWFh8bjYK/C7UjB1Ay0=" crossorigin="anonymous"></script>
     <script src="https://cozmo.github.io/jsQR/jsQR.js" integrity="sha256-0/SZSQ0fcKu/9aB/O6qUFHBkU2VQj/AMg3Q4vBkMqbk=" crossorigin="anonymous"></script>
-
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.24.0/moment.min.js" integrity="sha256-4iQZ6BVL4qNKlQ27TExEhBN1HFPvAvAMbFavKKosSWQ=" crossorigin="anonymous"></script>
     <script>
         //Establish Markdown Renderer and Connection to WebSocket
         var endpoint = "";
@@ -214,14 +214,15 @@
                     }
                 }
                 //Text message sent
-                if (json_data.hasOwnProperty("id") && json_data.hasOwnProperty("message")) {
+                if (json_data.hasOwnProperty("id") && json_data.hasOwnProperty("message") && json_data.hasOwnProperty("timestamp")) {
                     var peer_id = json_data["id"];
                     var message = json_data["message"]
+                    var timestamp = json_data["timestamp"]
                     //Don't attempt to decrypt a plaintext server message
                     if (peer_id == "Server") {
-                        add_chat_message(peer_id + ": " + message);
+                        add_chat_message(peer_id, message, timestamp);
                     } else {
-                        add_chat_message(peer_id + ": " + decrypt_encrypted_message(message));
+                        add_chat_message(peer_id, decrypt_encrypted_message(message), timestamp);
                     }
                 }
             }
@@ -257,13 +258,28 @@
         }
 
         //Render chat message inside the log
-        function add_chat_message(message) {
+        //If the timestamp is a negative value, then the time won't be displayed
+        function add_chat_message(id, message, timestamp) {
             var new_elem = $('<li class="list-group-item chat-message"></li>');
             var stripped = strip(message);
             if (stripped != "") {
                 var markdown_message = converter.makeHtml(stripped);
-                new_elem.html(markdown_message);
-                $("#log").append(new_elem);
+                //Don't display the time if the time is negative
+                var date_string = (timestamp >= 0) ? moment.unix(timestamp).format("LLL") : "";
+                var html_template = `
+                    <li class="list-group-item chat-message">
+                        <div class="container">
+                            <div class="row">
+                                <p class="font-italic font-weight-bold">${id}</p>
+                                <p class="text-right ml-auto">${date_string}</p> 
+                            </div>
+                            <div class="row">
+                                ${markdown_message}
+                            </div>
+                        </div>
+                    </li>
+                `;
+                $("#log").append($(html_template));
             }
             scroll_to_bottom();
         }
@@ -343,14 +359,14 @@
             connection.send(JSON.stringify(register_object));
             //Clear chat log
             $("#log").html("");
-            add_chat_message("Awaiting Validation...");
+            add_chat_message("", "Awaiting Validation...", -1);
             //Repeatedly ping server until connected
             var timer = setInterval(function() {
                 if (is_validated) {
                     clearInterval(timer);
                 } else {
                     connection.send(JSON.stringify(register_object));
-                    add_chat_message("Awaiting Validation...");
+                    add_chat_message("", "Awaiting Validation...", -1);
                 }
             }, 5000);
         });

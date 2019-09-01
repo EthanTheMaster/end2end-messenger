@@ -46,6 +46,8 @@ pub struct ValidationRequest {
 pub struct Text {
     pub id: String,
     pub message: String,
+    //Time is given in terms of seconds since UNIX epoch
+    pub timestamp: u64
 }
 
 //Enumerates the valid packets that the client may send
@@ -198,7 +200,8 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for ChatSession {
                                         self.server_addr.do_send(chatserver::Message {
                                             id: self.id.clone(),
                                             room_id: room_id.clone(),
-                                            message
+                                            message,
+                                            timestamp: chatserver::get_unix_time(),
                                         });
                                     },
                                     _ => {
